@@ -17,6 +17,8 @@ QUERY_ANALYSIS_PROMPT = PromptTemplate.from_template(
     "RETRIEVE" - If the query requires factual information from documents.
     "NO_RETRIEVE" - If the query is conversational, subjective, or doesn't need factual lookup.
     
+    You should only reply RETRIEVE or NO_RETRIEVE, no other explaination needed.
+    
     Decision:"""
 )
 

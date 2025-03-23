@@ -2,7 +2,7 @@
 Self-RAG Agent implementation using LangGraph.
 """
 import logging
-from typing import Dict, List, Any, Optional, Callable, Tuple
+from typing import Dict, List, Any, Optional, Callable, Tuple, TypedDict, Annotated
 
 from langchain.schema import BaseRetriever
 from langchain.schema.runnable import Runnable
@@ -21,6 +21,15 @@ from src.utils.helpers import convert_to_langsmith_metadata
 
 logger = logging.getLogger(__name__)
 app_config = get_config()  # Renamed to avoid conflict with the config parameter
+
+# Define the state type for the graph
+class GraphState(TypedDict):
+    query: str
+    retrieve_decision: Optional[str]
+    documents: Optional[List[Dict[str, Any]]]
+    relevant_docs_indices: Optional[List[int]]
+    response: Optional[str]
+    metadata: Optional[Dict[str, Any]]
 
 class SelfRAG:
     """
@@ -50,8 +59,8 @@ class SelfRAG:
         Returns:
             StateGraph: The constructed graph
         """
-        # Define the graph
-        builder = StateGraph(state_type=Dict)
+        # Define the graph with the GraphState type
+        builder = StateGraph(state_schema=GraphState)
         
         # Add nodes
         builder.add_node("analyze_query", analyze_query)

@@ -25,24 +25,8 @@ def create_sample_vectorstore() -> VectorStore:
     # Sample documents
     documents = [
         Document(
-            page_content="Python is a high-level, interpreted programming language known for its readability and versatility.",
-            metadata={"source": "programming_languages.txt", "topic": "Python"}
-        ),
-        Document(
-            page_content="JavaScript is a scripting language that enables interactive web pages and is an essential part of web applications.",
-            metadata={"source": "programming_languages.txt", "topic": "JavaScript"}
-        ),
-        Document(
-            page_content="Machine learning is a field of study that gives computers the ability to learn without being explicitly programmed.",
-            metadata={"source": "ai_concepts.txt", "topic": "Machine Learning"}
-        ),
-        Document(
-            page_content="Natural Language Processing (NLP) is a subfield of linguistics, computer science, and artificial intelligence concerned with the interactions between computers and human language.",
-            metadata={"source": "ai_concepts.txt", "topic": "NLP"}
-        ),
-        Document(
-            page_content="Self-RAG (Retrieval Augmented Generation) is an approach where the model decides when to retrieve information and which retrieved information to use.",
-            metadata={"source": "llm_techniques.txt", "topic": "Self-RAG"}
+            page_content="Jackson is a 3rd year uoft student",
+            metadata={"source": "personal_data.txt", "topic": "profile"}
         ),
     ]
     
@@ -52,6 +36,7 @@ def create_sample_vectorstore() -> VectorStore:
     persist_directory = "./chroma_db"
     
     # Create or load the Chroma vector store
+    # Note: Chroma automatically persists docs since v0.4.x
     vectorstore = Chroma.from_documents(
         documents=documents,
         embedding=embeddings,
@@ -59,8 +44,6 @@ def create_sample_vectorstore() -> VectorStore:
         collection_name="self-rag-collection",
     )
     
-    # Persist to disk
-    vectorstore.persist()
     logger.info(f"Vector store created with {len(documents)} documents and persisted to {persist_directory}")
     
     return vectorstore
