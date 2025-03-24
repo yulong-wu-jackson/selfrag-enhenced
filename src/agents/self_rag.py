@@ -17,6 +17,8 @@ from src.chains.nodes import (
     assess_relevance,
     generate_response,
     rewrite_query,
+    evaluate_response,
+    identify_additional_info,
 )
 from src.utils.helpers import convert_to_langsmith_metadata
 
@@ -33,6 +35,8 @@ class GraphState(TypedDict):
     documents: Optional[List[Dict[str, Any]]]
     relevant_docs_indices: Optional[List[int]]
     response: Optional[str]
+    response_evaluation: Optional[str]  # Evaluation of response quality
+    loop_count: Optional[int]  # Counter to track number of retrieval loops
     metadata: Optional[Dict[str, Any]]
 
 class SelfRAG:
@@ -72,13 +76,41 @@ class SelfRAG:
         builder.add_node("retrieve", get_retriever_node(self.retriever))
         builder.add_node("assess_relevance", assess_relevance)
         builder.add_node("generate_response", generate_response)
+        builder.add_node("evaluate_response", evaluate_response)
+        builder.add_node("identify_additional_info", identify_additional_info)
+        
+        # Define evaluation router for conditional branching
+        def evaluation_router(state: GraphState) -> str:
+            # Check if max iterations reached (prevent infinite loops)
+            if state.get("loop_count", 0) >= 3:  # Cap at 3 iterations
+                return "END"
+                
+            # Route based on response evaluation
+            evaluation = state.get("response_evaluation", "")
+            if evaluation == "SATISFACTORY":
+                return "END"
+            else:
+                return "identify_additional_info"
         
         # Define edges
         builder.add_edge("analyze_query", "rewrite_query")
         builder.add_edge("rewrite_query", "retrieve")
         builder.add_edge("retrieve", "assess_relevance")
         builder.add_edge("assess_relevance", "generate_response")
-        builder.add_edge("generate_response", END)
+        builder.add_edge("generate_response", "evaluate_response")
+        
+        # Add conditional routing after evaluation
+        builder.add_conditional_edges(
+            "evaluate_response",
+            evaluation_router,
+            {
+                "END": END,
+                "identify_additional_info": "identify_additional_info"
+            }
+        )
+        
+        # Complete the loop back to retrieve
+        builder.add_edge("identify_additional_info", "retrieve")
         
         # Set entry point
         builder.set_entry_point("analyze_query")

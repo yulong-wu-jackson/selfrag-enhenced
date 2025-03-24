@@ -17,6 +17,8 @@ from src.chains.prompts import (
     RELEVANCE_ASSESSMENT_PROMPT,
     RESPONSE_GENERATION_PROMPT,
     QUERY_REWRITING_PROMPT,
+    RESPONSE_EVALUATION_PROMPT,
+    ADDITIONAL_INFO_PROMPT,
 )
 from src.utils.helpers import format_documents, convert_to_langsmith_metadata
 
@@ -39,10 +41,17 @@ def analyze_query(state: Dict[str, Any]) -> Dict[str, Any]:
     prompt = QUERY_ANALYSIS_PROMPT.format(query=query)
     response = llm.invoke(prompt).strip()
     
+    # Clean response to ensure it's only the expected value
+    if "RETRIEVE" in response:
+        clean_response = "RETRIEVE"
+    else:
+        clean_response = "NO_RETRIEVE"
+    
     # Update state
-    state["retrieve_decision"] = response
+    state["retrieve_decision"] = clean_response
     state["metadata"] = {
-        "query_analysis": response
+        "query_analysis": clean_response,
+        "raw_response": response
     }
     
     return state
@@ -189,20 +198,28 @@ def assess_relevance(state: Dict[str, Any]) -> Dict[str, Any]:
     
     response = llm.invoke(prompt).strip()
     
-    # Process response
-    if response == "NONE":
+    # Process response with enhanced error handling
+    if "NONE" in response:
         relevant_indices = []
     else:
-        # Parse comma-separated list of indices
+        # Extract all digit sequences that might be indices
+        import re
+        # Find all numbers in the response, handling various formats
+        index_matches = re.findall(r'\b\d+\b', response)
         try:
-            relevant_indices = [int(idx.strip()) for idx in response.split(",")]
+            relevant_indices = [int(idx) for idx in index_matches]
+            # Filter out invalid indices
+            relevant_indices = [idx for idx in relevant_indices if 0 <= idx < len(documents)]
         except Exception as e:
             logger.warning(f"Error parsing relevance indices: {e}. Response: {response}")
             relevant_indices = []
     
     # Update state
     state["relevant_docs_indices"] = relevant_indices
-    state["metadata"]["relevance"] = f"Relevant documents: {relevant_indices}"
+    state["metadata"]["relevance"] = {
+        "relevant_indices": relevant_indices,
+        "raw_response": response
+    }
     
     return state
 
@@ -243,6 +260,125 @@ def generate_response(state: Dict[str, Any]) -> Dict[str, Any]:
     # Update state
     state["response"] = response
     state["metadata"]["response_generation"] = "Response generated"
+    
+    return state
+
+def evaluate_response(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Evaluate if the generated response fully answers the query and has no hallucinations.
+    
+    Args:
+        state: Current state with generated response
+        
+    Returns:
+        State with evaluation decision
+    """
+    original_query = state.get("original_query", state["query"])
+    response = state.get("response", "")
+    documents = state.get("documents", [])
+    
+    # If there's no response to evaluate, mark as needing improvement
+    if not response:
+        state["response_evaluation"] = "NEEDS_IMPROVEMENT"
+        state["metadata"]["response_evaluation"] = "No response to evaluate"
+        return state
+    
+    llm = get_llm()
+    
+    # Format documents for fact-checking
+    formatted_docs = format_documents(documents) if documents else "No documents were retrieved."
+    
+    # Evaluate response
+    prompt = RESPONSE_EVALUATION_PROMPT.format(
+        original_query=original_query,
+        response=response,
+        documents=formatted_docs
+    )
+    
+    raw_evaluation = llm.invoke(prompt).strip()
+    
+    # Clean response to ensure it's only the expected value
+    if "SATISFACTORY" in raw_evaluation:
+        evaluation = "SATISFACTORY"
+    else:
+        evaluation = "NEEDS_IMPROVEMENT"
+    
+    # Update state
+    state["response_evaluation"] = evaluation
+    state["metadata"]["response_evaluation"] = {
+        "decision": evaluation,
+        "raw_response": raw_evaluation
+    }
+    state["loop_count"] = state.get("loop_count", 0) + 1
+    
+    return state
+
+def identify_additional_info(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Identify what additional information is needed to improve the response.
+    
+    Args:
+        state: Current state with evaluated response
+        
+    Returns:
+        State with new search terms
+    """
+    original_query = state.get("original_query", state["query"])
+    response = state.get("response", "")
+    documents = state.get("documents", [])
+    
+    llm = get_llm()
+    
+    # Format documents
+    formatted_docs = format_documents(documents) if documents else "No documents were retrieved."
+    
+    # Identify gaps and generate new search terms
+    prompt = ADDITIONAL_INFO_PROMPT.format(
+        original_query=original_query,
+        response=response,
+        documents=formatted_docs
+    )
+    
+    additional_info = llm.invoke(prompt).strip()
+    
+    # Parse the response to extract new key sentences
+    new_key_sentences = []
+    missing_info = ""
+    hallucinations = ""
+    
+    current_section = None
+    for line in additional_info.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+            
+        if line.startswith("MISSING INFORMATION:"):
+            current_section = "missing"
+            continue
+        elif line.startswith("POTENTIAL HALLUCINATIONS:"):
+            current_section = "hallucinations"
+            continue
+        elif line.startswith("NEW KEY SENTENCES:"):
+            current_section = "key_sentences"
+            continue
+            
+        if current_section == "missing":
+            missing_info += line + " "
+        elif current_section == "hallucinations":
+            hallucinations += line + " "
+        elif current_section == "key_sentences" and line.startswith("-"):
+            new_key_sentences.append(line[1:].strip())
+    
+    # Update the existing key sentences with the new ones
+    current_key_sentences = state.get("search_key_sentences", [])
+    state["search_key_sentences"] = current_key_sentences + new_key_sentences
+    
+    # Update state with analysis
+    state["metadata"]["additional_info"] = {
+        "missing_information": missing_info.strip(),
+        "potential_hallucinations": hallucinations.strip(),
+        "new_key_sentences": new_key_sentences
+    }
     
     return state
 

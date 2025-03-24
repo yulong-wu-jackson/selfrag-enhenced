@@ -1,0 +1,3 @@
+========== EVALUATION SUMMARY ==========
+Average Self-RAG Score: 0.77
+Average Traditional RAG Score: 0.64
