@@ -50,7 +50,7 @@ QUERY_REWRITING_PROMPT = PromptTemplate.from_template(
     
     Please provide:
     1. A rewritten version of the query that is clearer, more specific, and better formatted for knowledge base searching
-    2. 1-5 key sentences or phrases that represent different aspects of the query or related search terms
+    2. 1-5 key sentences or phrases that represent different aspects of the query or related search terms (you should decide on how many key sentence to generate if it is simple task then you only need 1 key sentence)
     
     Format your response exactly as follows:
     
