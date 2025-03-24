@@ -66,10 +66,8 @@ def main():
     
     # Example queries
     queries = [
-        "What is Python programming language?",
-        "How are you doing today?",
-        "Explain the concept of Self-RAG",
         "Tell me a joke",
+        "Who is Jackson?"
     ]
     
     # Process each query

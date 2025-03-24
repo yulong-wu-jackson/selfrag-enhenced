@@ -40,6 +40,35 @@ RELEVANCE_ASSESSMENT_PROMPT = PromptTemplate.from_template(
     Relevant Documents:"""
 )
 
+# Query rewriting prompt for enhanced search
+QUERY_REWRITING_PROMPT = PromptTemplate.from_template(
+    """You are a query optimization expert for knowledge retrieval systems.
+    Your task is to analyze and rewrite a user query to make it more effective for searching a knowledge base,
+    and to identify key sentences or search terms that will help retrieve relevant information.
+    
+    User Query: {query}
+    
+    Please provide:
+    1. A rewritten version of the query that is clearer, more specific, and better formatted for knowledge base searching
+    2. 1-5 key sentences or phrases that represent different aspects of the query or related search terms
+    
+    Format your response exactly as follows:
+    
+    REWRITTEN QUERY:
+    <the rewritten query>
+    
+    KEY SENTENCES:
+    - <key sentence 1>
+    - <key sentence 2>
+    - <key sentence 3>
+    - <key sentence 4>
+    - <key sentence 5>
+    
+    Make sure the rewritten query and key sentences are semantically different enough to capture various aspects of the original query.
+    This will help retrieve a diverse set of relevant documents from the knowledge base.
+    """
+)
+
 # Self-RAG response generation prompt
 RESPONSE_GENERATION_PROMPT = PromptTemplate.from_template(
     """You are a helpful assistant. Your task is to answer the user's query.

@@ -16,6 +16,7 @@ from src.chains.nodes import (
     get_retriever_node,
     assess_relevance,
     generate_response,
+    rewrite_query,
 )
 from src.utils.helpers import convert_to_langsmith_metadata
 
@@ -25,6 +26,9 @@ app_config = get_config()  # Renamed to avoid conflict with the config parameter
 # Define the state type for the graph
 class GraphState(TypedDict):
     query: str
+    original_query: Optional[str]  # Original query before rewriting
+    rewritten_query: Optional[str]  # Rewritten query for better search
+    search_key_sentences: Optional[List[str]]  # Key sentences for multiple searches
     retrieve_decision: Optional[str]
     documents: Optional[List[Dict[str, Any]]]
     relevant_docs_indices: Optional[List[int]]
@@ -64,12 +68,14 @@ class SelfRAG:
         
         # Add nodes
         builder.add_node("analyze_query", analyze_query)
+        builder.add_node("rewrite_query", rewrite_query)
         builder.add_node("retrieve", get_retriever_node(self.retriever))
         builder.add_node("assess_relevance", assess_relevance)
         builder.add_node("generate_response", generate_response)
         
         # Define edges
-        builder.add_edge("analyze_query", "retrieve")
+        builder.add_edge("analyze_query", "rewrite_query")
+        builder.add_edge("rewrite_query", "retrieve")
         builder.add_edge("retrieve", "assess_relevance")
         builder.add_edge("assess_relevance", "generate_response")
         builder.add_edge("generate_response", END)

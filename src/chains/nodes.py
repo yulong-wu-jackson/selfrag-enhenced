@@ -16,6 +16,7 @@ from src.chains.prompts import (
     QUERY_ANALYSIS_PROMPT,
     RELEVANCE_ASSESSMENT_PROMPT,
     RESPONSE_GENERATION_PROMPT,
+    QUERY_REWRITING_PROMPT,
 )
 from src.utils.helpers import format_documents, convert_to_langsmith_metadata
 
@@ -46,6 +47,63 @@ def analyze_query(state: Dict[str, Any]) -> Dict[str, Any]:
     
     return state
 
+def rewrite_query(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Rewrite the query to make it better for knowledge base searching and generate key sentences.
+    Only runs if retrieval is needed.
+    
+    Args:
+        state: Current state including the query and retrieve_decision
+        
+    Returns:
+        Updated state with rewritten query and key sentences
+    """
+    # Skip if the decision was not to retrieve
+    if state.get("retrieve_decision", "") != "RETRIEVE":
+        return state
+    
+    query = state["query"]
+    llm = get_llm()
+    
+    # Rewrite query
+    prompt = QUERY_REWRITING_PROMPT.format(query=query)
+    response = llm.invoke(prompt).strip()
+    
+    # Parse the response
+    lines = response.split("\n")
+    rewritten_query = ""
+    key_sentences = []
+    
+    current_section = None
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        if line.startswith("REWRITTEN QUERY:"):
+            current_section = "query"
+            continue
+        elif line.startswith("KEY SENTENCES:"):
+            current_section = "key_sentences"
+            continue
+        
+        if current_section == "query":
+            rewritten_query = line
+            current_section = None
+        elif current_section == "key_sentences" and line.startswith("-"):
+            key_sentences.append(line[1:].strip())
+    
+    # Update state
+    state["original_query"] = query
+    state["rewritten_query"] = rewritten_query if rewritten_query else query
+    state["search_key_sentences"] = key_sentences
+    state["metadata"]["query_rewriting"] = {
+        "rewritten_query": rewritten_query,
+        "key_sentences": key_sentences
+    }
+    
+    return state
+
 def retrieve_documents(state: Dict[str, Any], retriever: BaseRetriever) -> Dict[str, Any]:
     """
     Retrieve documents based on the query.
@@ -57,21 +115,42 @@ def retrieve_documents(state: Dict[str, Any], retriever: BaseRetriever) -> Dict[
     Returns:
         State with retrieved documents
     """
-    query = state["query"]
-    
     # Only retrieve if the decision was to retrieve
     if state.get("retrieve_decision", "") == "RETRIEVE":
-        docs = retriever.get_relevant_documents(query)
+        # Get the rewritten query and key sentences
+        query = state.get("rewritten_query", state["query"])
+        key_sentences = state.get("search_key_sentences", [])
+        
+        all_docs = []
+        
+        # Search with the main rewritten query
+        main_docs = retriever.get_relevant_documents(query)
+        all_docs.extend(main_docs)
+        
+        # Search with each key sentence
+        for sentence in key_sentences:
+            sentence_docs = retriever.get_relevant_documents(sentence)
+            all_docs.extend(sentence_docs)
+        
+        # Remove duplicates (based on page_content)
+        unique_docs = []
+        seen_contents = set()
+        for doc in all_docs:
+            if doc.page_content not in seen_contents:
+                unique_docs.append(doc)
+                seen_contents.add(doc.page_content)
+        
         # Convert to dicts for easier serialization
         docs_dicts = [
             {
                 "page_content": doc.page_content,
                 "metadata": doc.metadata,
             }
-            for doc in docs
+            for doc in unique_docs
         ]
+        
         state["documents"] = docs_dicts
-        state["metadata"]["retrieval"] = f"Retrieved {len(docs)} documents"
+        state["metadata"]["retrieval"] = f"Retrieved {len(unique_docs)} unique documents from {len(all_docs)} total searches"
     else:
         state["documents"] = []
         state["metadata"]["retrieval"] = "No documents retrieved (based on query analysis)"
